@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { AiAssistantPanel } from './panels/AiAssistantPanel';
 import { LeftOperationsPanel } from './panels/LeftOperationsPanel';
 import { MapCanvas } from './map/MapCanvas';
+import type { MpcSearchResult } from '../types/search';
 
 type DragTarget = 'left' | 'right';
 
@@ -14,6 +15,8 @@ const DEFAULT_RIGHT_WIDTH = 380;
 export function WorkspaceLayout() {
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [visibleResultIds, setVisibleResultIds] = useState<string[]>([]);
+  const [visibleResults, setVisibleResults] = useState<MpcSearchResult[]>([]);
 
   const beginResize = useCallback(
     (target: DragTarget) => (event: React.PointerEvent<HTMLDivElement>) => {
@@ -62,16 +65,39 @@ export function WorkspaceLayout() {
     [leftWidth, rightWidth],
   );
 
+  const toggleResultOnMap = useCallback((result: MpcSearchResult) => {
+    setVisibleResults((current) => {
+      if (current.some((item) => item.id === result.id)) {
+        return current.filter((item) => item.id !== result.id);
+      }
+
+      return [...current, result];
+    });
+    setVisibleResultIds((current) =>
+      current.includes(result.id) ? current.filter((id) => id !== result.id) : [...current, result.id],
+    );
+  }, []);
+
+  const resetVisibleResults = useCallback(() => {
+    setVisibleResultIds([]);
+    setVisibleResults([]);
+  }, []);
+
   return (
     <main className="workspace" style={{ gridTemplateColumns }}>
-      <LeftOperationsPanel isCollapsed={leftWidth === 0} />
+      <LeftOperationsPanel
+        isCollapsed={leftWidth === 0}
+        onResetVisibleResults={resetVisibleResults}
+        onToggleResultOnMap={toggleResultOnMap}
+        visibleResultIds={visibleResultIds}
+      />
       <div
         aria-label="调整左侧操作面板宽度"
         className={leftWidth === 0 ? 'resize-handle left-collapsed' : 'resize-handle'}
         onPointerDown={beginResize('left')}
         role="separator"
       />
-      <MapCanvas />
+      <MapCanvas visibleResults={visibleResults} />
       <div
         aria-label="调整右侧 AI 面板宽度"
         className={rightWidth === 0 ? 'resize-handle right-collapsed' : 'resize-handle'}

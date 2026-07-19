@@ -4,6 +4,8 @@ import {
   CheckCircle2,
   ChevronRight,
   Download,
+  Eye,
+  EyeOff,
   FileImage,
   Folder,
   FolderOpen,
@@ -16,26 +18,13 @@ import {
   Search,
   X,
 } from 'lucide-react';
+import type { MpcSearchResult } from '../../types/search';
 
 type SearchSourceNode = {
   id?: string;
   name: string;
   meta?: string;
   children?: SearchSourceNode[];
-};
-
-type MpcSearchResult = {
-  id: string;
-  collection: string;
-  datetime: string | null;
-  cloudCover: number | null;
-  platform: string | null;
-  mgrsTile: string | null;
-  bbox: number[] | null;
-  assets: {
-    thumbnail: string | null;
-    visual: string | null;
-  };
 };
 
 type MpcSearchResponse = {
@@ -155,9 +144,17 @@ const userDataTree: DataTreeNode[] = [
 
 type LeftOperationsPanelProps = {
   isCollapsed: boolean;
+  onResetVisibleResults: () => void;
+  onToggleResultOnMap: (result: MpcSearchResult) => void;
+  visibleResultIds: string[];
 };
 
-export function LeftOperationsPanel({ isCollapsed }: LeftOperationsPanelProps) {
+export function LeftOperationsPanel({
+  isCollapsed,
+  onResetVisibleResults,
+  onToggleResultOnMap,
+  visibleResultIds,
+}: LeftOperationsPanelProps) {
   const [activeTab, setActiveTab] = useState<WorkflowTabId>('data');
   const selectedTab = workflowTabs.find((tab) => tab.id === activeTab) ?? workflowTabs[0];
 
@@ -187,7 +184,13 @@ export function LeftOperationsPanel({ isCollapsed }: LeftOperationsPanelProps) {
 
         {activeTab === 'data' && <DataWorkspace />}
 
-        {activeTab === 'search' && <SearchWorkspace />}
+        {activeTab === 'search' && (
+          <SearchWorkspace
+            onResetVisibleResults={onResetVisibleResults}
+            onToggleResultOnMap={onToggleResultOnMap}
+            visibleResultIds={visibleResultIds}
+          />
+        )}
 
         {activeTab !== 'data' && activeTab !== 'search' && (
           <WorkflowPanel selectedTab={selectedTab} />
@@ -263,7 +266,15 @@ function DataWorkspace() {
   );
 }
 
-function SearchWorkspace() {
+function SearchWorkspace({
+  onResetVisibleResults,
+  onToggleResultOnMap,
+  visibleResultIds,
+}: {
+  onResetVisibleResults: () => void;
+  onToggleResultOnMap: (result: MpcSearchResult) => void;
+  visibleResultIds: string[];
+}) {
   const [selectedSources, setSelectedSources] = useState(['sentinel-2']);
   const [sourceQuery, setSourceQuery] = useState('');
   const [isSourceDialogOpen, setIsSourceDialogOpen] = useState(false);
@@ -294,6 +305,7 @@ function SearchWorkspace() {
     setSearchError('');
     setSearchResponse(null);
     setCurrentPage(1);
+    onResetVisibleResults();
 
     try {
       const longitude = parseRangeInput(longitudeRange, '经度', -180, 180);
@@ -353,6 +365,7 @@ function SearchWorkspace() {
               setSearchResponse(null);
               setSearchError('');
               setCurrentPage(1);
+              onResetVisibleResults();
             }}
             type="button"
           >
@@ -523,13 +536,26 @@ function SearchWorkspace() {
             </div>
             <div className="result-list">
               {pageResults.length > 0 ? (
-                pageResults.map((result) => (
-                  <button className="result-item" key={result.id} type="button">
-                    <Layers3 size={15} />
-                    <span>{result.id}</span>
-                    <strong>{formatSearchResultMeta(result)}</strong>
-                  </button>
-                ))
+                pageResults.map((result) => {
+                  const isVisible = visibleResultIds.includes(result.id);
+
+                  return (
+                    <div className={isVisible ? 'result-item active' : 'result-item'} key={result.id}>
+                      <Layers3 size={15} />
+                      <span>{result.id}</span>
+                      <strong>{formatSearchResultMeta(result)}</strong>
+                      <button
+                        aria-label={isVisible ? '隐藏影像' : '显示影像'}
+                        className="result-map-toggle"
+                        disabled={!result.bbox}
+                        onClick={() => onToggleResultOnMap(result)}
+                        type="button"
+                      >
+                        {isVisible ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                  );
+                })
               ) : (
                 <div className="empty-result">当前条件下没有检索到 Sentinel-2 L2A 影像。</div>
               )}
