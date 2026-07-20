@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { AiAssistantPanel } from './panels/AiAssistantPanel';
-import { LeftOperationsPanel } from './panels/LeftOperationsPanel';
-import { MapCanvas } from './map/MapCanvas';
+import { LeftOperationsPanel, type WorkflowTabId } from './panels/LeftOperationsPanel';
+import { MapCanvas, type BaseLayer } from './map/MapCanvas';
+import { LayoutView } from './map/LayoutView';
+import type { LayoutPaperId, LayoutTool } from './map/layoutConfig';
 import type { MpcSearchResult } from '../types/search';
 
 type DragTarget = 'left' | 'right';
@@ -15,6 +17,11 @@ const DEFAULT_RIGHT_WIDTH = 380;
 export function WorkspaceLayout() {
   const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
   const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [activeWorkflowTab, setActiveWorkflowTab] = useState<WorkflowTabId>('data');
+  const [baseLayer, setBaseLayer] = useState<BaseLayer>('streets');
+  const [layoutTool, setLayoutTool] = useState<LayoutTool>('select');
+  const [layoutZoom, setLayoutZoom] = useState(100);
+  const [paperSize, setPaperSize] = useState<LayoutPaperId>('custom-145x100');
   const [visibleResultIds, setVisibleResultIds] = useState<string[]>([]);
   const [visibleResults, setVisibleResults] = useState<MpcSearchResult[]>([]);
 
@@ -86,9 +93,17 @@ export function WorkspaceLayout() {
   return (
     <main className="workspace" style={{ gridTemplateColumns }}>
       <LeftOperationsPanel
+        activeTab={activeWorkflowTab}
         isCollapsed={leftWidth === 0}
+        layoutTool={layoutTool}
+        layoutZoom={layoutZoom}
+        onActiveTabChange={setActiveWorkflowTab}
+        onLayoutToolChange={setLayoutTool}
+        onLayoutZoomChange={setLayoutZoom}
+        onPaperSizeChange={setPaperSize}
         onResetVisibleResults={resetVisibleResults}
         onToggleResultOnMap={toggleResultOnMap}
+        paperSize={paperSize}
         visibleResultIds={visibleResultIds}
       />
       <div
@@ -97,7 +112,11 @@ export function WorkspaceLayout() {
         onPointerDown={beginResize('left')}
         role="separator"
       />
-      <MapCanvas visibleResults={visibleResults} />
+      {activeWorkflowTab === 'cartography' ? (
+        <LayoutView baseLayer={baseLayer} layoutTool={layoutTool} layoutZoom={layoutZoom} paperSize={paperSize} visibleResults={visibleResults} />
+      ) : (
+        <MapCanvas baseLayer={baseLayer} onBaseLayerChange={setBaseLayer} visibleResults={visibleResults} />
+      )}
       <div
         aria-label="调整右侧 AI 面板宽度"
         className={rightWidth === 0 ? 'resize-handle right-collapsed' : 'resize-handle'}

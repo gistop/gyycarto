@@ -234,7 +234,8 @@ button {
 
 .operations-panel,
 .ai-panel,
-.map-workspace {
+.map-workspace,
+.layout-workspace {
   min-height: 0;
   overflow: hidden;
 }
@@ -450,6 +451,105 @@ button {
   background: var(--teal-soft);
   border-color: #b6dcd3;
   color: var(--teal);
+}
+
+.cartography-panel {
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.layout-tool-grid,
+.paper-size-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.layout-tool-button,
+.paper-size-button,
+.layout-reset-view {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: #33434d;
+}
+
+.layout-tool-button {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  height: 38px;
+  justify-content: center;
+}
+
+.layout-tool-button.active,
+.paper-size-button.active {
+  background: var(--teal-soft);
+  border-color: #b6dcd3;
+  color: var(--teal);
+  font-weight: 720;
+}
+
+.layout-zoom-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 32px minmax(0, 1fr) 32px 48px;
+}
+
+.layout-zoom-row button {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: #52616b;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  width: 32px;
+}
+
+.layout-zoom-row input {
+  accent-color: var(--teal);
+  width: 100%;
+}
+
+.layout-zoom-row strong {
+  color: var(--teal);
+  font-size: 12px;
+  text-align: right;
+}
+
+.layout-reset-view {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+  height: 36px;
+  justify-content: center;
+  width: 100%;
+}
+
+.paper-size-button {
+  display: grid;
+  gap: 4px;
+  min-height: 54px;
+  padding: 9px;
+  text-align: left;
+}
+
+.paper-size-button span {
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.paper-size-button strong {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 680;
 }
 
 .filter-panel {
@@ -1293,6 +1393,117 @@ button {
   border-right: 1px solid rgba(255, 255, 255, 0.18);
   font-size: 12px;
   padding-right: 20px;
+}
+
+.layout-workspace {
+  background: #cfd9dc;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: 30px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.layout-board {
+  background: #cfd9dc;
+  grid-column: 2;
+  grid-row: 2;
+  height: 100%;
+  overflow: auto;
+  position: relative;
+}
+
+.layout-workspace.pan-mode .layout-board {
+  cursor: grab;
+}
+
+.layout-workspace.pan-mode .layout-board:active {
+  cursor: grabbing;
+}
+
+.layout-canvas {
+  display: grid;
+  min-height: max-content;
+  min-width: max-content;
+  place-items: start;
+}
+
+.layout-ruler-corner,
+.layout-ruler {
+  background-color: #f6f8f9;
+  border-color: #aebbc2;
+  color: #54646d;
+  font-size: 10px;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+  z-index: 2;
+}
+
+.layout-ruler-corner {
+  border-right: 1px solid #aebbc2;
+  border-bottom: 1px solid #aebbc2;
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.layout-ruler-top {
+  border-bottom: 1px solid #aebbc2;
+  grid-column: 2;
+  grid-row: 1;
+  height: 30px;
+}
+
+.layout-ruler-left {
+  border-right: 1px solid #aebbc2;
+  grid-column: 1;
+  grid-row: 2;
+  width: 30px;
+}
+
+.layout-page {
+  background: #ffffff;
+  border: 1px solid #b8c4ca;
+  display: grid;
+  filter: drop-shadow(0 16px 30px rgba(15, 23, 32, 0.18));
+  gap: 12px;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 34px 34px 50px;
+}
+
+.layout-page-label {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.layout-page-label span {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.layout-page-label strong {
+  font-weight: 680;
+}
+
+.layout-map-frame {
+  background: #dce5e5;
+  border: 1px solid #172026;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.layout-maplibre {
+  height: 100%;
+  width: 100%;
+}
+
+.layout-workspace.pan-mode .layout-maplibre {
+  pointer-events: none;
 }
 
 .assistant-card {

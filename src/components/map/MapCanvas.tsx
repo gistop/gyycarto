@@ -4,7 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Check, Crosshair, Layers, LocateFixed, Maximize2, Minus, Plus, Ruler } from 'lucide-react';
 import type { MpcSearchResult } from '../../types/search';
 
-type BaseLayer = 'streets' | 'esri-world-imagery';
+export type BaseLayer = 'streets' | 'esri-world-imagery';
 type TilejsonResponse = {
   attribution?: string;
   bounds?: number[];
@@ -15,8 +15,8 @@ type TilejsonResponse = {
   message?: string;
 };
 
-const AOI_BBOX = [121.342691, 31.067863, 121.563309, 31.294137] as const;
-const AOI_CENTER: [number, number] = [
+export const AOI_BBOX = [121.342691, 31.067863, 121.563309, 31.294137] as const;
+export const AOI_CENTER: [number, number] = [
   (AOI_BBOX[0] + AOI_BBOX[2]) / 2,
   (AOI_BBOX[1] + AOI_BBOX[3]) / 2,
 ];
@@ -40,12 +40,19 @@ const aoiPolygon: GeoJSON.Feature<GeoJSON.Polygon> = {
   type: 'Feature',
 };
 
-export function MapCanvas({ visibleResults }: { visibleResults: MpcSearchResult[] }) {
+export function MapCanvas({
+  baseLayer,
+  onBaseLayerChange,
+  visibleResults,
+}: {
+  baseLayer: BaseLayer;
+  onBaseLayerChange: (baseLayer: BaseLayer) => void;
+  visibleResults: MpcSearchResult[];
+}) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const scaleControlRef = useRef<maplibregl.ScaleControl | null>(null);
   const rasterLayerIdsRef = useRef(new Map<string, { layerId: string; sourceId: string }>());
-  const [baseLayer, setBaseLayer] = useState<BaseLayer>('streets');
   const [isLayerMenuOpen, setIsLayerMenuOpen] = useState(false);
   const [isScaleVisible, setIsScaleVisible] = useState(true);
   const [mapReadout, setMapReadout] = useState({
@@ -127,7 +134,7 @@ export function MapCanvas({ visibleResults }: { visibleResults: MpcSearchResult[
   const selectBaseLayer = (nextLayer: BaseLayer) => {
     const map = mapRef.current;
 
-    setBaseLayer(nextLayer);
+    onBaseLayerChange(nextLayer);
     setIsLayerMenuOpen(false);
     rasterLayerIdsRef.current.clear();
     map?.setStyle(createMapStyle(nextLayer));
@@ -233,7 +240,7 @@ export function MapCanvas({ visibleResults }: { visibleResults: MpcSearchResult[
   );
 }
 
-function createMapStyle(baseLayer: BaseLayer): StyleSpecification {
+export function createMapStyle(baseLayer: BaseLayer): StyleSpecification {
   const isImagery = baseLayer === 'esri-world-imagery';
 
   return {
@@ -264,7 +271,7 @@ function createMapStyle(baseLayer: BaseLayer): StyleSpecification {
   };
 }
 
-function addOperationalLayers(map: MapLibreMap) {
+export function addOperationalLayers(map: MapLibreMap) {
   if (map.getSource('aoi')) {
     return;
   }
@@ -295,7 +302,7 @@ function addOperationalLayers(map: MapLibreMap) {
   fitAoi(map);
 }
 
-function updateVisibleResultBoundaries(map: MapLibreMap, visibleResults: MpcSearchResult[]) {
+export function updateVisibleResultBoundaries(map: MapLibreMap, visibleResults: MpcSearchResult[]) {
   const data = createResultFeatureCollection(visibleResults);
   const source = map.getSource('visible-results') as maplibregl.GeoJSONSource | undefined;
 
@@ -355,7 +362,7 @@ function updateVisibleResultBoundaries(map: MapLibreMap, visibleResults: MpcSear
   }
 }
 
-async function syncVisibleRasterLayers(
+export async function syncVisibleRasterLayers(
   map: MapLibreMap,
   visibleResults: MpcSearchResult[],
   rasterLayerIds: Map<string, { layerId: string; sourceId: string }>,
@@ -507,7 +514,7 @@ function fitBoundsToResults(map: MapLibreMap, results: MpcSearchResult[]) {
   });
 }
 
-function fitAoi(map: MapLibreMap | null) {
+export function fitAoi(map: MapLibreMap | null) {
   map?.fitBounds(
     [
       [AOI_BBOX[0], AOI_BBOX[1]],

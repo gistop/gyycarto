@@ -10,15 +10,20 @@ import {
   Folder,
   FolderOpen,
   Grid2X2,
+  Hand,
   Layers3,
   MapPinned,
   MousePointer2,
   PackageCheck,
+  RotateCcw,
   Scissors,
   Search,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import type { MpcSearchResult } from '../../types/search';
+import { layoutPaperPresets, type LayoutPaperId, type LayoutTool } from '../map/layoutConfig';
 
 type SearchSourceNode = {
   id?: string;
@@ -113,7 +118,7 @@ const workflowTabs = [
   },
 ] as const;
 
-type WorkflowTabId = (typeof workflowTabs)[number]['id'];
+export type WorkflowTabId = (typeof workflowTabs)[number]['id'];
 
 type DataTreeNode = {
   name: string;
@@ -143,19 +148,34 @@ const userDataTree: DataTreeNode[] = [
 ];
 
 type LeftOperationsPanelProps = {
+  activeTab: WorkflowTabId;
   isCollapsed: boolean;
+  layoutTool: LayoutTool;
+  layoutZoom: number;
+  onActiveTabChange: (tabId: WorkflowTabId) => void;
+  onLayoutToolChange: (tool: LayoutTool) => void;
+  onLayoutZoomChange: (zoom: number) => void;
+  onPaperSizeChange: (paperId: LayoutPaperId) => void;
   onResetVisibleResults: () => void;
   onToggleResultOnMap: (result: MpcSearchResult) => void;
+  paperSize: LayoutPaperId;
   visibleResultIds: string[];
 };
 
 export function LeftOperationsPanel({
+  activeTab,
   isCollapsed,
+  layoutTool,
+  layoutZoom,
+  onActiveTabChange,
+  onLayoutToolChange,
+  onLayoutZoomChange,
+  onPaperSizeChange,
   onResetVisibleResults,
   onToggleResultOnMap,
+  paperSize,
   visibleResultIds,
 }: LeftOperationsPanelProps) {
-  const [activeTab, setActiveTab] = useState<WorkflowTabId>('data');
   const selectedTab = workflowTabs.find((tab) => tab.id === activeTab) ?? workflowTabs[0];
 
   return (
@@ -171,7 +191,7 @@ export function LeftOperationsPanel({
                 aria-selected={isActive}
                 className={isActive ? 'workflow-tab active' : 'workflow-tab'}
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => onActiveTabChange(tab.id)}
                 role="tab"
                 type="button"
               >
@@ -192,7 +212,18 @@ export function LeftOperationsPanel({
           />
         )}
 
-        {activeTab !== 'data' && activeTab !== 'search' && (
+        {activeTab === 'cartography' && (
+          <CartographyWorkspace
+            layoutTool={layoutTool}
+            layoutZoom={layoutZoom}
+            onLayoutToolChange={onLayoutToolChange}
+            onLayoutZoomChange={onLayoutZoomChange}
+            onPaperSizeChange={onPaperSizeChange}
+            paperSize={paperSize}
+          />
+        )}
+
+        {activeTab !== 'data' && activeTab !== 'search' && activeTab !== 'cartography' && (
           <WorkflowPanel selectedTab={selectedTab} />
         )}
 
@@ -221,6 +252,106 @@ export function LeftOperationsPanel({
 
       </div>
     </aside>
+  );
+}
+
+function CartographyWorkspace({
+  layoutTool,
+  layoutZoom,
+  onLayoutToolChange,
+  onLayoutZoomChange,
+  onPaperSizeChange,
+  paperSize,
+}: {
+  layoutTool: LayoutTool;
+  layoutZoom: number;
+  onLayoutToolChange: (tool: LayoutTool) => void;
+  onLayoutZoomChange: (zoom: number) => void;
+  onPaperSizeChange: (paperId: LayoutPaperId) => void;
+  paperSize: LayoutPaperId;
+}) {
+  const setZoom = (zoom: number) => onLayoutZoomChange(Math.min(180, Math.max(50, zoom)));
+
+  return (
+    <div className="data-workspace">
+      <section className="cartography-panel">
+        <div className="section-heading">
+          <h3>版面导航</h3>
+          <button
+            onClick={() => {
+              onLayoutToolChange('select');
+              onLayoutZoomChange(100);
+            }}
+            type="button"
+          >
+            重置
+          </button>
+        </div>
+
+        <div className="layout-tool-grid">
+          <button
+            className={layoutTool === 'select' ? 'layout-tool-button active' : 'layout-tool-button'}
+            onClick={() => onLayoutToolChange('select')}
+            type="button"
+          >
+            <MousePointer2 size={16} />
+            <span>选择</span>
+          </button>
+          <button
+            className={layoutTool === 'pan' ? 'layout-tool-button active' : 'layout-tool-button'}
+            onClick={() => onLayoutToolChange('pan')}
+            type="button"
+          >
+            <Hand size={16} />
+            <span>平移纸张</span>
+          </button>
+        </div>
+
+        <div className="layout-zoom-row">
+          <button aria-label="缩小纸张" onClick={() => setZoom(layoutZoom - 10)} type="button">
+            <ZoomOut size={16} />
+          </button>
+          <input
+            aria-label="纸张缩放"
+            max="180"
+            min="50"
+            onChange={(event) => setZoom(Number(event.currentTarget.value))}
+            type="range"
+            value={layoutZoom}
+          />
+          <button aria-label="放大纸张" onClick={() => setZoom(layoutZoom + 10)} type="button">
+            <ZoomIn size={16} />
+          </button>
+          <strong>{layoutZoom}%</strong>
+        </div>
+
+        <button className="layout-reset-view" onClick={() => setZoom(100)} type="button">
+          <RotateCcw size={16} />
+          <span>缩放到 100%</span>
+        </button>
+      </section>
+
+      <section className="cartography-panel">
+        <div className="section-heading">
+          <h3>纸张尺寸</h3>
+        </div>
+        <div className="paper-size-grid">
+          {layoutPaperPresets.map((paper) => (
+            <button
+              className={paperSize === paper.id ? 'paper-size-button active' : 'paper-size-button'}
+              key={paper.id}
+              onClick={() => onPaperSizeChange(paper.id)}
+              type="button"
+            >
+              <span>{paper.shortLabel}</span>
+              <strong>
+                {paper.widthMm} x {paper.heightMm} mm
+              </strong>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
   );
 }
 
