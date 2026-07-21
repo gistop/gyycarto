@@ -14,6 +14,8 @@ type MpcSearchRequest = {
   maxResults?: number;
 };
 
+type SearchProviderId = 'mpc' | 'earth-search';
+
 type NormalizedSearchRequest = {
   bbox: [number, number, number, number];
   cloudCoverMax: number;
@@ -56,7 +58,19 @@ type StacSearchResponse = {
   };
 };
 
-const MPC_SEARCH_URL = 'https://planetarycomputer.microsoft.com/api/stac/v1/search';
+const searchProviders: Record<SearchProviderId, { collection: string; label: string; searchUrl: string }> = {
+  mpc: {
+    collection: 'sentinel-2-l2a',
+    label: 'Microsoft Planetary Computer',
+    searchUrl: 'https://planetarycomputer.microsoft.com/api/stac/v1/search',
+  },
+  'earth-search': {
+    collection: 'sentinel-2-l2a',
+    label: 'Element 84 Earth Search',
+    searchUrl: 'https://earth-search.aws.element84.com/v1/search',
+  },
+};
+const searchProviderIds = Object.keys(searchProviders) as SearchProviderId[];
 const SENTINEL_COLLECTION = 'sentinel-2-l2a';
 const DEFAULT_BBOX: [number, number, number, number] = [121.342691, 31.067863, 121.563309, 31.294137];
 const DEFAULT_DATE_START = '2026-01-01';
@@ -100,33 +114,71 @@ export const onRequestPost: PagesFunction = async ({ request }) => {
     return cached;
   }
 
-  const searchBody = {
-    bbox: normalizedSearch.bbox,
-    collections: [SENTINEL_COLLECTION],
-    datetime: normalizedSearch.datetime,
-    limit: Math.min(MPC_PAGE_SIZE, normalizedSearch.maxResults),
-    query: {
-      'eo:cloud_cover': {
-        lte: normalizedSearch.cloudCoverMax,
-      },
-    },
-    sortby: [
-      {
-        direction: 'desc',
-        field: 'properties.datetime',
-      },
-    ],
-  };
+  const providerResults = await Promise.allSettled(
+    searchProviderIds.map(async (providerId) => {
+      const provider = searchProviders[providerId];
+      const searchResult = await fetchAllStacFeatures(
+        provider,
+        buildSearchBody(provider.collection, normalizedSearch),
+        normalizedSearch.maxResults,
+      );
 
-  let searchResult: Awaited<ReturnType<typeof fetchAllStacFeatures>>;
+      return {
+        collection: provider.collection,
+        error: null,
+        matched: searchResult.matched,
+        provider: providerId,
+        providerName: provider.label,
+        returned: searchResult.features.length,
+        results: searchResult.features.map((feature) => normalizeFeature(feature, providerId)),
+        truncated: searchResult.truncated,
+      };
+    }),
+  );
 
-  try {
-    searchResult = await fetchAllStacFeatures(searchBody, normalizedSearch.maxResults);
-  } catch (error) {
+  const providers = Object.fromEntries(
+    providerResults.map((result, index) => {
+      const providerId = searchProviderIds[index];
+      const provider = searchProviders[providerId];
+
+      if (result.status === 'fulfilled') {
+        return [providerId, result.value];
+      }
+
+      return [
+        providerId,
+        {
+          collection: provider.collection,
+          error: result.reason instanceof Error ? result.reason.message : `${provider.label} search failed.`,
+          matched: undefined,
+          provider: providerId,
+          providerName: provider.label,
+          returned: 0,
+          results: [],
+          truncated: false,
+        },
+      ];
+    }),
+  ) as Record<
+    SearchProviderId,
+    {
+      collection: string;
+      error: string | null;
+      matched?: number;
+      provider: SearchProviderId;
+      providerName: string;
+      returned: number;
+      results: ReturnType<typeof normalizeFeature>[];
+      truncated: boolean;
+    }
+  >;
+
+  if (Object.values(providers).every((provider) => provider.error)) {
     return json(
       {
-        error: 'MPC_STAC_SEARCH_FAILED',
-        message: error instanceof Error ? error.message : 'Microsoft Planetary Computer search failed.',
+        error: 'STAC_SEARCH_FAILED',
+        message: '所有 STAC 目录检索失败，请稍后重试。',
+        providers,
       },
       502,
     );
@@ -135,14 +187,10 @@ export const onRequestPost: PagesFunction = async ({ request }) => {
   const response = json(
     {
       bbox: normalizedSearch.bbox,
-      collection: SENTINEL_COLLECTION,
       cloudCoverMax: normalizedSearch.cloudCoverMax,
       datetime: normalizedSearch.datetime,
-      matched: searchResult.matched,
       maxResults: normalizedSearch.maxResults,
-      returned: searchResult.features.length,
-      results: searchResult.features.map(normalizeFeature),
-      truncated: searchResult.truncated,
+      providers,
     },
     200,
     {
@@ -201,6 +249,26 @@ function normalizeSearchRequest(request: MpcSearchRequest): NormalizedSearchRequ
   };
 }
 
+function buildSearchBody(collection: string, normalizedSearch: NormalizedSearchRequest) {
+  return {
+    bbox: normalizedSearch.bbox,
+    collections: [collection],
+    datetime: normalizedSearch.datetime,
+    limit: Math.min(MPC_PAGE_SIZE, normalizedSearch.maxResults),
+    query: {
+      'eo:cloud_cover': {
+        lte: normalizedSearch.cloudCoverMax,
+      },
+    },
+    sortby: [
+      {
+        direction: 'desc',
+        field: 'properties.datetime',
+      },
+    ],
+  };
+}
+
 function normalizeBbox(value: unknown): [number, number, number, number] | { error: string } {
   const bbox = Array.isArray(value) ? value : DEFAULT_BBOX;
 
@@ -253,6 +321,7 @@ function clampMaxResults(value: unknown) {
 }
 
 async function fetchAllStacFeatures(
+  provider: (typeof searchProviders)[SearchProviderId],
   firstBody: Record<string, unknown>,
   maxResults: number,
 ): Promise<{ features: StacFeature[]; matched?: number; truncated: boolean }> {
@@ -262,7 +331,7 @@ async function fetchAllStacFeatures(
     body: JSON.stringify(firstBody),
     headers: stacHeaders(),
     method: 'POST',
-    url: MPC_SEARCH_URL,
+    url: provider.searchUrl,
   };
 
   while (nextRequest && features.length < maxResults) {
@@ -273,7 +342,7 @@ async function fetchAllStacFeatures(
     });
 
     if (!stacResponse.ok) {
-      throw new Error(`Microsoft Planetary Computer returned ${stacResponse.status}.`);
+      throw new Error(`${provider.label} returned ${stacResponse.status}.`);
     }
 
     const payload = (await stacResponse.json()) as StacSearchResponse;
@@ -313,12 +382,14 @@ function stacHeaders() {
   };
 }
 
-function normalizeFeature(feature: StacFeature) {
+function normalizeFeature(feature: StacFeature, providerId: SearchProviderId) {
   const thumbnail = feature.assets?.thumbnail?.href;
-  const visual = feature.assets?.visual?.href;
+  const visual = feature.assets?.visual?.href ?? feature.assets?.rendered_preview?.href;
 
   return {
     id: feature.id,
+    provider: providerId,
+    providerName: searchProviders[providerId].label,
     collection: feature.collection ?? SENTINEL_COLLECTION,
     datetime: feature.properties?.datetime ?? null,
     cloudCover: feature.properties?.['eo:cloud_cover'] ?? null,

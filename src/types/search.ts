@@ -1,5 +1,9 @@
+export type SearchProviderId = 'mpc' | 'earth-search';
+
 export type MpcSearchResult = {
   id: string;
+  provider: SearchProviderId;
+  providerName: string;
   collection: string;
   datetime: string | null;
   cloudCover: number | null;
@@ -11,3 +15,7 @@ export type MpcSearchResult = {
     visual: string | null;
   };
 };
+
+export function getSearchResultKey(result: Pick<MpcSearchResult, 'id' | 'provider'>) {
+  return `${result.provider}:${result.id}`;
+}

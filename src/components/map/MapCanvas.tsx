@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl, { type Map as MapLibreMap, type StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Check, Crosshair, Layers, LocateFixed, Maximize2, Minus, Plus, Ruler } from 'lucide-react';
-import type { MpcSearchResult } from '../../types/search';
+import { getSearchResultKey, type MpcSearchResult } from '../../types/search';
 
 export type BaseLayer = 'streets' | 'esri-world-imagery';
 type TilejsonResponse = {
@@ -578,7 +578,7 @@ export async function syncVisibleRasterLayers(
   isCancelled: () => boolean = () => false,
   tileOffset = 0,
 ) {
-  const visibleIds = new Set(visibleResults.map((result) => result.id));
+  const visibleIds = new Set(visibleResults.map((result) => getSearchResultKey(result)));
 
   for (const [resultId, ids] of rasterLayerIds) {
     if (visibleIds.has(resultId)) {
@@ -597,11 +597,13 @@ export async function syncVisibleRasterLayers(
   }
 
   for (const result of visibleResults) {
-    if (!result.bbox || rasterLayerIds.has(result.id)) {
+    const resultKey = getSearchResultKey(result);
+
+    if (result.provider !== 'mpc' || !result.bbox || rasterLayerIds.has(resultKey)) {
       continue;
     }
 
-    const layerKey = sanitizeLayerKey(result.id);
+    const layerKey = sanitizeLayerKey(resultKey);
     const sourceId = `mpc-visual-source-${layerKey}`;
     const layerId = `mpc-visual-layer-${layerKey}`;
     const tilejson = await fetchVisualTilejson(result);
@@ -640,7 +642,7 @@ export async function syncVisibleRasterLayers(
       },
       map.getLayer('aoi-fill') ? 'aoi-fill' : undefined,
     );
-    rasterLayerIds.set(result.id, { layerId, sourceId });
+    rasterLayerIds.set(resultKey, { layerId, sourceId });
   }
 }
 

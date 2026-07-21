@@ -1024,6 +1024,29 @@ button {
   font-size: 12px;
 }
 
+.result-provider-tabs {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.result-provider-tabs .field-button {
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.result-provider-tabs .field-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-provider-tabs .field-button strong {
+  font-size: 12px;
+}
+
 .result-summary strong {
   color: var(--teal);
   font-size: 18px;

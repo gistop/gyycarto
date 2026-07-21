@@ -24,7 +24,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import type { MpcSearchResult } from '../../types/search';
+import { getSearchResultKey, type MpcSearchResult, type SearchProviderId } from '../../types/search';
 import { TILE_OFFSET_MAX, TILE_OFFSET_MIN } from '../map/MapCanvas';
 import { layoutPaperPresets, type LayoutAdornmentId, type LayoutPaperId, type LayoutTool } from '../map/layoutConfig';
 
@@ -35,22 +35,34 @@ type SearchSourceNode = {
   children?: SearchSourceNode[];
 };
 
-type MpcSearchResponse = {
-  bbox: readonly number[];
+type SearchProviderResponse = {
   collection: string;
-  cloudCoverMax: number;
-  datetime: string;
+  error: string | null;
   matched?: number;
-  maxResults: number;
+  provider: SearchProviderId;
+  providerName: string;
   returned: number;
   results: MpcSearchResult[];
   truncated: boolean;
+};
+
+type MpcSearchResponse = {
+  bbox: readonly number[];
+  cloudCoverMax: number;
+  datetime: string;
+  maxResults: number;
+  providers?: Record<SearchProviderId, SearchProviderResponse>;
   error?: string;
   message?: string;
 };
 
 const RESULT_PAGE_SIZE = 8;
 const MAX_SEARCH_RESULTS = 500;
+
+const searchProviderOptions: Array<{ id: SearchProviderId; label: string }> = [
+  { id: 'mpc', label: 'Microsoft MPC' },
+  { id: 'earth-search', label: 'Element 84 / Earth Search' },
+];
 
 const sourceCategories: SearchSourceNode[] = [
   {
@@ -534,6 +546,7 @@ function SearchWorkspace({
   visibleResultIds: string[];
 }) {
   const [selectedSources, setSelectedSources] = useState(['sentinel-2']);
+  const [selectedProvider, setSelectedProvider] = useState<SearchProviderId>('mpc');
   const [sourceQuery, setSourceQuery] = useState('');
   const [isSourceDialogOpen, setIsSourceDialogOpen] = useState(false);
   const [locationMode, setLocationMode] = useState<'polygon' | 'coordinates'>('polygon');
@@ -542,13 +555,18 @@ function SearchWorkspace({
   const [startDate, setStartDate] = useState('2026-01-01');
   const [endDate, setEndDate] = useState('2026-07-18');
   const [cloudLimit, setCloudLimit] = useState(20);
-  const [searchResponse, setSearchResponse] = useState<MpcSearchResponse | null>(null);
+  const [searchResponses, setSearchResponses] = useState<Record<SearchProviderId, SearchProviderResponse | null>>({
+    'earth-search': null,
+    mpc: null,
+  });
   const [searchError, setSearchError] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const filteredSourceTree = sourceCategories
     .map((category) => filterSourceNode(category, sourceQuery))
     .filter((category): category is SearchSourceNode => Boolean(category));
+  const searchResponse = searchResponses[selectedProvider];
+  const hasSearchResponses = Object.values(searchResponses).some(Boolean);
   const searchResults = searchResponse?.results ?? [];
   const pageCount = Math.max(1, Math.ceil(searchResults.length / RESULT_PAGE_SIZE));
   const pageResults = searchResults.slice((currentPage - 1) * RESULT_PAGE_SIZE, currentPage * RESULT_PAGE_SIZE);
@@ -559,9 +577,12 @@ function SearchWorkspace({
     );
   };
 
-  const searchMpc = async () => {
+  const searchStac = async () => {
     setSearchError('');
-    setSearchResponse(null);
+    setSearchResponses({
+      'earth-search': null,
+      mpc: null,
+    });
     setCurrentPage(1);
     onResetVisibleResults();
 
@@ -593,12 +614,15 @@ function SearchWorkspace({
       const payload = (await response.json()) as MpcSearchResponse;
 
       if (!response.ok || payload.error) {
-        throw new Error(payload.message || 'MPC 检索失败');
+        throw new Error(payload.message || 'STAC 检索失败');
       }
 
-      setSearchResponse(payload);
+      setSearchResponses({
+        'earth-search': payload.providers?.['earth-search'] ?? null,
+        mpc: payload.providers?.mpc ?? null,
+      });
     } catch (error) {
-      setSearchError(error instanceof Error ? error.message : 'MPC 检索失败');
+      setSearchError(error instanceof Error ? error.message : 'STAC 检索失败');
     } finally {
       setIsSearching(false);
     }
@@ -612,6 +636,7 @@ function SearchWorkspace({
           <button
             onClick={() => {
               setSelectedSources(['sentinel-2']);
+              setSelectedProvider('mpc');
               setSourceQuery('');
               setIsSourceDialogOpen(false);
               setLocationMode('polygon');
@@ -620,7 +645,10 @@ function SearchWorkspace({
               setStartDate('2026-01-01');
               setEndDate('2026-07-18');
               setCloudLimit(20);
-              setSearchResponse(null);
+              setSearchResponses({
+                'earth-search': null,
+                mpc: null,
+              });
               setSearchError('');
               setCurrentPage(1);
               onResetVisibleResults();
@@ -774,39 +802,69 @@ function SearchWorkspace({
         <button
           className="search-action"
           disabled={isSearching || !selectedSources.includes('sentinel-2')}
-          onClick={searchMpc}
+          onClick={searchStac}
           type="button"
         >
           <Download size={17} />
-          {isSearching ? '正在检索 MPC' : '检索网络数据'}
+          {isSearching ? '正在检索 STAC' : '检索网络数据'}
         </button>
 
         {searchError && <div className="search-error">{searchError}</div>}
 
-        {searchResponse && (
+        {hasSearchResponses && (
           <div className="search-results">
+            <div className="result-provider-tabs" aria-label="切换结果目录">
+              {searchProviderOptions.map((provider) => {
+                const providerResponse = searchResponses[provider.id];
+
+                return (
+                  <button
+                    className={selectedProvider === provider.id ? 'field-button active' : 'field-button'}
+                    key={provider.id}
+                    onClick={() => {
+                      setSelectedProvider(provider.id);
+                      setCurrentPage(1);
+                      onResetVisibleResults();
+                    }}
+                    type="button"
+                  >
+                    <span>{provider.label}</span>
+                    <strong>{providerResponse ? providerResponse.returned : 0}</strong>
+                  </button>
+                );
+              })}
+            </div>
+
+            {searchResponse?.error && <div className="search-error">{searchResponse.error}</div>}
+
+            {searchResponse && (
+              <>
             <div className="result-summary">
               <strong>{searchResponse.returned}</strong>
               <span>
+                {searchResponse.providerName} ·
                 条候选数据{typeof searchResponse.matched === 'number' ? ` / 匹配 ${searchResponse.matched} 条` : ''}
-                {searchResponse.truncated ? `，已显示前 ${searchResponse.maxResults} 条` : ''}
+                {searchResponse.truncated ? `，已显示前 ${MAX_SEARCH_RESULTS} 条` : ''}
               </span>
             </div>
             <div className="result-list">
               {pageResults.length > 0 ? (
                 pageResults.map((result) => {
-                  const isVisible = visibleResultIds.includes(result.id);
+                  const resultKey = getSearchResultKey(result);
+                  const isVisible = visibleResultIds.includes(resultKey);
+                  const canPreviewOnMap = result.provider === 'mpc' && Boolean(result.bbox);
 
                   return (
-                    <div className={isVisible ? 'result-item active' : 'result-item'} key={result.id}>
+                    <div className={isVisible ? 'result-item active' : 'result-item'} key={resultKey}>
                       <Layers3 size={15} />
                       <span>{result.id}</span>
                       <strong>{formatSearchResultMeta(result)}</strong>
                       <button
                         aria-label={isVisible ? '隐藏影像' : '显示影像'}
                         className="result-map-toggle"
-                        disabled={!result.bbox}
+                        disabled={!canPreviewOnMap}
                         onClick={() => onToggleResultOnMap(result)}
+                        title={canPreviewOnMap ? undefined : '当前仅 MPC 结果支持地图瓦片预览'}
                         type="button"
                       >
                         {isVisible ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -838,6 +896,8 @@ function SearchWorkspace({
                   下一页
                 </button>
               </div>
+            )}
+              </>
             )}
           </div>
         )}

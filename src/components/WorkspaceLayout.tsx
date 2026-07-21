@@ -4,7 +4,7 @@ import { LeftOperationsPanel, type WorkflowTabId } from './panels/LeftOperations
 import { MapCanvas, TILE_OFFSET_MAX, TILE_OFFSET_MIN, type BaseLayer } from './map/MapCanvas';
 import { LayoutView } from './map/LayoutView';
 import type { LayoutAdornmentId, LayoutPaperId, LayoutTool } from './map/layoutConfig';
-import type { MpcSearchResult } from '../types/search';
+import { getSearchResultKey, type MpcSearchResult } from '../types/search';
 
 type DragTarget = 'left' | 'right';
 
@@ -77,15 +77,17 @@ export function WorkspaceLayout() {
   );
 
   const toggleResultOnMap = useCallback((result: MpcSearchResult) => {
+    const resultKey = getSearchResultKey(result);
+
     setVisibleResults((current) => {
-      if (current.some((item) => item.id === result.id)) {
-        return current.filter((item) => item.id !== result.id);
+      if (current.some((item) => getSearchResultKey(item) === resultKey)) {
+        return current.filter((item) => getSearchResultKey(item) !== resultKey);
       }
 
       return [...current, result];
     });
     setVisibleResultIds((current) =>
-      current.includes(result.id) ? current.filter((id) => id !== result.id) : [...current, result.id],
+      current.includes(resultKey) ? current.filter((id) => id !== resultKey) : [...current, resultKey],
     );
   }, []);
 
