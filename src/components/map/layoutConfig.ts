@@ -1,5 +1,7 @@
 export type LayoutTool = 'select' | 'pan';
 
+export type LayoutAdornmentId = 'north-arrow' | 'scale-bar';
+
 export type LayoutPaperId = 'custom-145x100' | 'a4-portrait' | 'a4-landscape' | 'a3-portrait' | 'a3-landscape';
 
 export type LayoutPaperPreset = {

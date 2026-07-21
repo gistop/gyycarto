@@ -21,6 +21,216 @@ export const AOI_CENTER: [number, number] = [
   (AOI_BBOX[1] + AOI_BBOX[3]) / 2,
 ];
 
+export const TILE_OFFSET_MIN = -8;
+export const TILE_OFFSET_MAX = 2;
+
+const TILE_SIZE = 256;
+const OFFSET_TILE_PROTOCOL = 'gyy-offset-tile';
+const offsetTileImageCache = new Map<string, Promise<ImageBitmap | null>>();
+const offsetTileDataCache = new Map<string, Promise<ArrayBuffer>>();
+let isOffsetTileProtocolRegistered = false;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function rememberCacheValue<TKey, TValue>(cache: Map<TKey, TValue>, key: TKey, value: TValue, maxEntries: number) {
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+
+  cache.set(key, value);
+
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+
+    if (oldestKey === undefined) {
+      break;
+    }
+
+    cache.delete(oldestKey);
+  }
+
+  return value;
+}
+
+function wrapTileX(x: number, z: number) {
+  const max = 2 ** z;
+
+  return ((x % max) + max) % max;
+}
+
+function isValidTileY(y: number, z: number) {
+  return y >= 0 && y < 2 ** z;
+}
+
+function formatTileUrl(tileTemplate: string, z: number, x: number, y: number) {
+  return tileTemplate.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+}
+
+async function fetchTileBitmap(tileTemplate: string, z: number, x: number, y: number, signal?: AbortSignal) {
+  if (z < 0 || z > 19 || !isValidTileY(y, z)) {
+    return null;
+  }
+
+  const wrappedX = wrapTileX(x, z);
+  const key = `${tileTemplate}|${z}/${wrappedX}/${y}`;
+
+  if (offsetTileImageCache.has(key)) {
+    return offsetTileImageCache.get(key);
+  }
+
+  const promise = fetch(formatTileUrl(tileTemplate, z, wrappedX, y), { signal })
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`Tile request failed: ${response.status}`);
+      }
+
+      return response.blob();
+    })
+    .then((blob) => createImageBitmap(blob));
+
+  promise.catch(() => offsetTileImageCache.delete(key));
+
+  return rememberCacheValue(offsetTileImageCache, key, promise, 420);
+}
+
+function createOffsetTileCanvas() {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    return new OffscreenCanvas(TILE_SIZE, TILE_SIZE);
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = TILE_SIZE;
+  canvas.height = TILE_SIZE;
+
+  return canvas;
+}
+
+function offsetCanvasToBlob(canvas: OffscreenCanvas | HTMLCanvasElement) {
+  if ('convertToBlob' in canvas) {
+    return canvas.convertToBlob({ quality: 0.92, type: 'image/jpeg' });
+  }
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+
+        reject(new Error('Failed to render offset tile'));
+      },
+      'image/jpeg',
+      0.92,
+    );
+  });
+}
+
+async function renderOffsetTile(
+  tileTemplate: string,
+  z: number,
+  x: number,
+  y: number,
+  requestedOffset: number,
+  signal?: AbortSignal,
+) {
+  const effectiveOffset = Math.round(clamp(requestedOffset, -z, 19 - z));
+  const key = `${tileTemplate}|${z}/${x}/${y}/${effectiveOffset}`;
+
+  if (offsetTileDataCache.has(key)) {
+    return offsetTileDataCache.get(key);
+  }
+
+  const promise = (async () => {
+    const canvas = createOffsetTileCanvas();
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+
+    if (!ctx) {
+      throw new Error('Failed to create offset tile canvas context');
+    }
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    if (effectiveOffset >= 0) {
+      const factor = 2 ** effectiveOffset;
+      const sourceZ = z + effectiveOffset;
+      const drawSize = TILE_SIZE / factor;
+
+      for (let tileY = 0; tileY < factor; tileY += 1) {
+        for (let tileX = 0; tileX < factor; tileX += 1) {
+          const bitmap = await fetchTileBitmap(tileTemplate, sourceZ, x * factor + tileX, y * factor + tileY, signal);
+
+          if (bitmap) {
+            ctx.drawImage(bitmap, tileX * drawSize, tileY * drawSize, drawSize, drawSize);
+          }
+        }
+      }
+    } else {
+      const factor = 2 ** Math.abs(effectiveOffset);
+      const sourceZ = z + effectiveOffset;
+      const parentX = Math.floor(x / factor);
+      const parentY = Math.floor(y / factor);
+      const bitmap = await fetchTileBitmap(tileTemplate, sourceZ, parentX, parentY, signal);
+
+      if (bitmap) {
+        const sourceSize = TILE_SIZE / factor;
+        const sourceX = (((x % factor) + factor) % factor) * sourceSize;
+        const sourceY = (((y % factor) + factor) % factor) * sourceSize;
+        ctx.drawImage(bitmap, sourceX, sourceY, sourceSize, sourceSize, 0, 0, TILE_SIZE, TILE_SIZE);
+      }
+    }
+
+    const blob = await offsetCanvasToBlob(canvas);
+
+    return blob.arrayBuffer();
+  })();
+
+  promise.catch(() => offsetTileDataCache.delete(key));
+
+  return rememberCacheValue(offsetTileDataCache, key, promise, 260);
+}
+
+function ensureOffsetTileProtocol() {
+  if (isOffsetTileProtocolRegistered || typeof maplibregl.addProtocol !== 'function') {
+    return;
+  }
+
+  maplibregl.addProtocol(OFFSET_TILE_PROTOCOL, async (params, abortController) => {
+    const url = new URL(params.url);
+    const [zText, xText, yText] = url.pathname.split('/').filter(Boolean);
+    const z = Number(zText);
+    const x = Number(xText);
+    const y = Number(yText);
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const tileTemplate = url.searchParams.get('template');
+
+    if (!tileTemplate) {
+      throw new Error('Offset tile template is missing');
+    }
+
+    const data = await renderOffsetTile(tileTemplate, z, x, y, offset, abortController.signal);
+
+    return { data };
+  });
+
+  isOffsetTileProtocolRegistered = true;
+}
+
+function createOffsetTileUrl(tileTemplate: string, tileOffset: number) {
+  const offset = Math.round(tileOffset);
+
+  if (offset === 0 || typeof maplibregl.addProtocol !== 'function') {
+    return tileTemplate;
+  }
+
+  ensureOffsetTileProtocol();
+
+  return `${OFFSET_TILE_PROTOCOL}://tile/{z}/{x}/{y}?offset=${offset}&template=${encodeURIComponent(tileTemplate)}`;
+}
+
 const aoiPolygon: GeoJSON.Feature<GeoJSON.Polygon> = {
   geometry: {
     coordinates: [
@@ -137,8 +347,8 @@ export function MapCanvas({
     onBaseLayerChange(nextLayer);
     setIsLayerMenuOpen(false);
     rasterLayerIdsRef.current.clear();
-    map?.setStyle(createMapStyle(nextLayer));
-    map?.once('styledata', () => {
+    map?.setStyle(createMapStyle(nextLayer), { diff: false });
+    map?.once('style.load', () => {
       addOperationalLayers(map);
       updateVisibleResultBoundaries(map, visibleResults);
       void syncVisibleRasterLayers(map, visibleResults, rasterLayerIdsRef.current);
@@ -240,8 +450,11 @@ export function MapCanvas({
   );
 }
 
-export function createMapStyle(baseLayer: BaseLayer): StyleSpecification {
+export function createMapStyle(baseLayer: BaseLayer, tileOffset = 0): StyleSpecification {
   const isImagery = baseLayer === 'esri-world-imagery';
+  const tileTemplate = isImagery
+    ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   return {
     glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
@@ -258,12 +471,8 @@ export function createMapStyle(baseLayer: BaseLayer): StyleSpecification {
           ? 'Tiles © Esri'
           : '© OpenStreetMap contributors',
         maxzoom: 19,
-        tileSize: 256,
-        tiles: [
-          isImagery
-            ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-            : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        ],
+        tileSize: TILE_SIZE,
+        tiles: [createOffsetTileUrl(tileTemplate, tileOffset)],
         type: 'raster',
       },
     },
@@ -367,6 +576,7 @@ export async function syncVisibleRasterLayers(
   visibleResults: MpcSearchResult[],
   rasterLayerIds: Map<string, { layerId: string; sourceId: string }>,
   isCancelled: () => boolean = () => false,
+  tileOffset = 0,
 ) {
   const visibleIds = new Set(visibleResults.map((result) => result.id));
 
@@ -404,8 +614,8 @@ export async function syncVisibleRasterLayers(
       bounds: result.bbox as [number, number, number, number],
       maxzoom: tilejson.maxzoom ?? 19,
       minzoom: tilejson.minzoom ?? 8,
-      tileSize: 256,
-      tiles: tilejson.tiles,
+      tileSize: TILE_SIZE,
+      tiles: tilejson.tiles.map((tileUrlTemplate) => createOffsetTileUrl(tileUrlTemplate, tileOffset)),
       type: 'raster',
     };
 

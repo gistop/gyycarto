@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { AiAssistantPanel } from './panels/AiAssistantPanel';
 import { LeftOperationsPanel, type WorkflowTabId } from './panels/LeftOperationsPanel';
-import { MapCanvas, type BaseLayer } from './map/MapCanvas';
+import { MapCanvas, TILE_OFFSET_MAX, TILE_OFFSET_MIN, type BaseLayer } from './map/MapCanvas';
 import { LayoutView } from './map/LayoutView';
-import type { LayoutPaperId, LayoutTool } from './map/layoutConfig';
+import type { LayoutAdornmentId, LayoutPaperId, LayoutTool } from './map/layoutConfig';
 import type { MpcSearchResult } from '../types/search';
 
 type DragTarget = 'left' | 'right';
@@ -20,8 +20,12 @@ export function WorkspaceLayout() {
   const [activeWorkflowTab, setActiveWorkflowTab] = useState<WorkflowTabId>('data');
   const [baseLayer, setBaseLayer] = useState<BaseLayer>('streets');
   const [layoutTool, setLayoutTool] = useState<LayoutTool>('select');
+  const [layoutMapZoom, setLayoutMapZoom] = useState(10);
   const [layoutZoom, setLayoutZoom] = useState(100);
+  const [layoutTileZoom, setLayoutTileZoom] = useState(0);
   const [paperSize, setPaperSize] = useState<LayoutPaperId>('custom-145x100');
+  const [layoutAdornmentIds, setLayoutAdornmentIds] = useState<LayoutAdornmentId[]>([]);
+  const [layoutExportRequestId, setLayoutExportRequestId] = useState(0);
   const [visibleResultIds, setVisibleResultIds] = useState<string[]>([]);
   const [visibleResults, setVisibleResults] = useState<MpcSearchResult[]>([]);
 
@@ -90,18 +94,38 @@ export function WorkspaceLayout() {
     setVisibleResults([]);
   }, []);
 
+  const updateLayoutMapZoom = useCallback((zoom: number) => {
+    const nextZoom = Math.min(19, Math.max(2, Math.round(zoom)));
+
+    setLayoutMapZoom(nextZoom);
+    setLayoutTileZoom((current) => Math.min(TILE_OFFSET_MAX, Math.max(Math.max(TILE_OFFSET_MIN, -nextZoom), current)));
+  }, []);
+
+  const toggleLayoutAdornment = useCallback((adornmentId: LayoutAdornmentId) => {
+    setLayoutAdornmentIds((current) =>
+      current.includes(adornmentId) ? current.filter((id) => id !== adornmentId) : [...current, adornmentId],
+    );
+  }, []);
+
   return (
     <main className="workspace" style={{ gridTemplateColumns }}>
       <LeftOperationsPanel
         activeTab={activeWorkflowTab}
+        activeLayoutAdornmentIds={layoutAdornmentIds}
         isCollapsed={leftWidth === 0}
+        layoutMapZoom={layoutMapZoom}
         layoutTool={layoutTool}
+        layoutTileZoom={layoutTileZoom}
         layoutZoom={layoutZoom}
         onActiveTabChange={setActiveWorkflowTab}
+        onLayoutMapZoomChange={updateLayoutMapZoom}
         onLayoutToolChange={setLayoutTool}
+        onLayoutTileZoomChange={setLayoutTileZoom}
         onLayoutZoomChange={setLayoutZoom}
         onPaperSizeChange={setPaperSize}
         onResetVisibleResults={resetVisibleResults}
+        onExportLayout={() => setLayoutExportRequestId((requestId) => requestId + 1)}
+        onToggleLayoutAdornment={toggleLayoutAdornment}
         onToggleResultOnMap={toggleResultOnMap}
         paperSize={paperSize}
         visibleResultIds={visibleResultIds}
@@ -113,7 +137,18 @@ export function WorkspaceLayout() {
         role="separator"
       />
       {activeWorkflowTab === 'cartography' ? (
-        <LayoutView baseLayer={baseLayer} layoutTool={layoutTool} layoutZoom={layoutZoom} paperSize={paperSize} visibleResults={visibleResults} />
+        <LayoutView
+          baseLayer={baseLayer}
+          exportRequestId={layoutExportRequestId}
+          layoutAdornmentIds={layoutAdornmentIds}
+          layoutMapZoom={layoutMapZoom}
+          onLayoutMapZoomChange={updateLayoutMapZoom}
+          layoutTool={layoutTool}
+          layoutTileZoom={layoutTileZoom}
+          layoutZoom={layoutZoom}
+          paperSize={paperSize}
+          visibleResults={visibleResults}
+        />
       ) : (
         <MapCanvas baseLayer={baseLayer} onBaseLayerChange={setBaseLayer} visibleResults={visibleResults} />
       )}

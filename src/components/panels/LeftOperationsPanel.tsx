@@ -3,6 +3,7 @@ import {
   Archive,
   CheckCircle2,
   ChevronRight,
+  Compass,
   Download,
   Eye,
   EyeOff,
@@ -15,6 +16,7 @@ import {
   MapPinned,
   MousePointer2,
   PackageCheck,
+  Ruler,
   RotateCcw,
   Scissors,
   Search,
@@ -23,7 +25,8 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import type { MpcSearchResult } from '../../types/search';
-import { layoutPaperPresets, type LayoutPaperId, type LayoutTool } from '../map/layoutConfig';
+import { TILE_OFFSET_MAX, TILE_OFFSET_MIN } from '../map/MapCanvas';
+import { layoutPaperPresets, type LayoutAdornmentId, type LayoutPaperId, type LayoutTool } from '../map/layoutConfig';
 
 type SearchSourceNode = {
   id?: string;
@@ -149,14 +152,21 @@ const userDataTree: DataTreeNode[] = [
 
 type LeftOperationsPanelProps = {
   activeTab: WorkflowTabId;
+  activeLayoutAdornmentIds: LayoutAdornmentId[];
   isCollapsed: boolean;
+  layoutMapZoom: number;
   layoutTool: LayoutTool;
+  layoutTileZoom: number;
   layoutZoom: number;
   onActiveTabChange: (tabId: WorkflowTabId) => void;
+  onLayoutMapZoomChange: (zoom: number) => void;
   onLayoutToolChange: (tool: LayoutTool) => void;
+  onLayoutTileZoomChange: (zoom: number) => void;
   onLayoutZoomChange: (zoom: number) => void;
   onPaperSizeChange: (paperId: LayoutPaperId) => void;
   onResetVisibleResults: () => void;
+  onExportLayout: () => void;
+  onToggleLayoutAdornment: (adornmentId: LayoutAdornmentId) => void;
   onToggleResultOnMap: (result: MpcSearchResult) => void;
   paperSize: LayoutPaperId;
   visibleResultIds: string[];
@@ -164,14 +174,21 @@ type LeftOperationsPanelProps = {
 
 export function LeftOperationsPanel({
   activeTab,
+  activeLayoutAdornmentIds,
   isCollapsed,
+  layoutMapZoom,
   layoutTool,
+  layoutTileZoom,
   layoutZoom,
   onActiveTabChange,
+  onLayoutMapZoomChange,
   onLayoutToolChange,
+  onLayoutTileZoomChange,
   onLayoutZoomChange,
   onPaperSizeChange,
   onResetVisibleResults,
+  onExportLayout,
+  onToggleLayoutAdornment,
   onToggleResultOnMap,
   paperSize,
   visibleResultIds,
@@ -214,9 +231,14 @@ export function LeftOperationsPanel({
 
         {activeTab === 'cartography' && (
           <CartographyWorkspace
+            layoutMapZoom={layoutMapZoom}
             layoutTool={layoutTool}
+            layoutTileZoom={layoutTileZoom}
             layoutZoom={layoutZoom}
+            onExportLayout={onExportLayout}
+            onLayoutMapZoomChange={onLayoutMapZoomChange}
             onLayoutToolChange={onLayoutToolChange}
+            onLayoutTileZoomChange={onLayoutTileZoomChange}
             onLayoutZoomChange={onLayoutZoomChange}
             onPaperSizeChange={onPaperSizeChange}
             paperSize={paperSize}
@@ -227,50 +249,114 @@ export function LeftOperationsPanel({
           <WorkflowPanel selectedTab={selectedTab} />
         )}
 
-        <section className="task-summary">
-          <div className="summary-item">
-            <PackageCheck size={17} />
-            <span>候选影像</span>
-            <strong>128</strong>
-          </div>
-          <div className="summary-item">
-            <Archive size={17} />
-            <span>下载队列</span>
-            <strong>12</strong>
-          </div>
-          <div className="summary-item">
-            <CheckCircle2 size={17} />
-            <span>已归档</span>
-            <strong>48</strong>
-          </div>
-          <div className="summary-item">
-            <Grid2X2 size={17} />
-            <span>待镶嵌</span>
-            <strong>6</strong>
-          </div>
-        </section>
+        {activeTab === 'cartography' ? (
+          <LayoutAdornmentTools
+            activeLayoutAdornmentIds={activeLayoutAdornmentIds}
+            onToggleLayoutAdornment={onToggleLayoutAdornment}
+          />
+        ) : (
+          <TaskSummary />
+        )}
 
       </div>
     </aside>
   );
 }
 
+function LayoutAdornmentTools({
+  activeLayoutAdornmentIds,
+  onToggleLayoutAdornment,
+}: {
+  activeLayoutAdornmentIds: LayoutAdornmentId[];
+  onToggleLayoutAdornment: (adornmentId: LayoutAdornmentId) => void;
+}) {
+  const adornments: Array<{ id: LayoutAdornmentId; label: string; meta: string; icon: typeof Compass }> = [
+    { id: 'north-arrow', label: '指北针', meta: '插入地图', icon: Compass },
+    { id: 'scale-bar', label: '比例尺', meta: '插入地图', icon: Ruler },
+  ];
+
+  return (
+    <section className="task-summary layout-insert-tools" aria-label="地图整饰插入">
+      {adornments.map((adornment) => {
+        const Icon = adornment.icon;
+        const isActive = activeLayoutAdornmentIds.includes(adornment.id);
+
+        return (
+          <button
+            aria-pressed={isActive}
+            className={isActive ? 'summary-item layout-insert-item active' : 'summary-item layout-insert-item'}
+            key={adornment.id}
+            onClick={() => onToggleLayoutAdornment(adornment.id)}
+            type="button"
+          >
+            <Icon size={18} />
+            <span>{adornment.meta}</span>
+            <strong>{adornment.label}</strong>
+          </button>
+        );
+      })}
+    </section>
+  );
+}
+
+function TaskSummary() {
+  return (
+    <section className="task-summary">
+      <div className="summary-item">
+        <PackageCheck size={17} />
+        <span>候选影像</span>
+        <strong>128</strong>
+      </div>
+      <div className="summary-item">
+        <Archive size={17} />
+        <span>下载队列</span>
+        <strong>12</strong>
+      </div>
+      <div className="summary-item">
+        <CheckCircle2 size={17} />
+        <span>已归档</span>
+        <strong>48</strong>
+      </div>
+      <div className="summary-item">
+        <Grid2X2 size={17} />
+        <span>待镶嵌</span>
+        <strong>6</strong>
+      </div>
+    </section>
+  );
+}
+
 function CartographyWorkspace({
+  layoutMapZoom,
   layoutTool,
+  layoutTileZoom,
   layoutZoom,
+  onExportLayout,
+  onLayoutMapZoomChange,
   onLayoutToolChange,
+  onLayoutTileZoomChange,
   onLayoutZoomChange,
   onPaperSizeChange,
   paperSize,
 }: {
+  layoutMapZoom: number;
   layoutTool: LayoutTool;
+  layoutTileZoom: number;
   layoutZoom: number;
+  onExportLayout: () => void;
+  onLayoutMapZoomChange: (zoom: number) => void;
   onLayoutToolChange: (tool: LayoutTool) => void;
+  onLayoutTileZoomChange: (zoom: number) => void;
   onLayoutZoomChange: (zoom: number) => void;
   onPaperSizeChange: (paperId: LayoutPaperId) => void;
   paperSize: LayoutPaperId;
 }) {
+  const setMapZoom = (zoom: number) => onLayoutMapZoomChange(Math.min(19, Math.max(2, Math.round(zoom))));
   const setZoom = (zoom: number) => onLayoutZoomChange(Math.min(180, Math.max(50, zoom)));
+  const minTileOffset = Math.max(TILE_OFFSET_MIN, -layoutMapZoom);
+  const setTileZoom = (zoom: number) =>
+    onLayoutTileZoomChange(Math.min(TILE_OFFSET_MAX, Math.max(minTileOffset, Math.round(zoom))));
+  const tileOffsetLabel = `Z${layoutTileZoom > 0 ? `+${layoutTileZoom}` : layoutTileZoom}`;
 
   return (
     <div className="data-workspace">
@@ -328,6 +414,47 @@ function CartographyWorkspace({
         <button className="layout-reset-view" onClick={() => setZoom(100)} type="button">
           <RotateCcw size={16} />
           <span>缩放到 100%</span>
+        </button>
+
+        <div className="layout-tile-zoom-row">
+          <span>地图缩放</span>
+          <button aria-label="缩小图框内地图" onClick={() => setMapZoom(layoutMapZoom - 1)} type="button">
+            <ZoomOut size={16} />
+          </button>
+          <input
+            aria-label="图框内地图缩放"
+            max="19"
+            min="2"
+            onChange={(event) => setMapZoom(Number(event.currentTarget.value))}
+            step="1"
+            type="number"
+            value={layoutMapZoom}
+          />
+          <button aria-label="放大图框内地图" onClick={() => setMapZoom(layoutMapZoom + 1)} type="button">
+            <ZoomIn size={16} />
+          </button>
+        </div>
+
+        <div className="layout-tile-zoom-row">
+          <span>瓦片级数</span>
+          <button title="降低取样级数，地理范围不变" aria-label="降低瓦片级数" onClick={() => setTileZoom(layoutTileZoom - 1)} type="button">
+            <ZoomOut size={16} />
+          </button>
+          <input
+            aria-label="瓦片级数"
+            readOnly
+            title={tileOffsetLabel}
+            type="text"
+            value={tileOffsetLabel}
+          />
+          <button title="提高取样级数，地理范围不变" aria-label="提高瓦片级数" onClick={() => setTileZoom(layoutTileZoom + 1)} type="button">
+            <ZoomIn size={16} />
+          </button>
+        </div>
+
+        <button className="layout-reset-view layout-export-jpg" onClick={onExportLayout} type="button">
+          <Download size={16} />
+          <span>导出 JPG 300dpi</span>
         </button>
       </section>
 
